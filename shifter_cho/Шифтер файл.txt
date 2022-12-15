@@ -1,0 +1,154 @@
+#define _CRT_SECURE_NO_WARNINGS
+#include <iostream>
+#include <cmath>
+#include <math.h>
+#include <windows.graphics.h>
+#include <fstream>
+#include "dspl.hpp"
+#define M_2PI       6.283185307179586476925286766559
+using namespace std;
+const int N = 2048;
+const int fd = 24'000;
+complex_t complexSignal[N];
+
+void upload_to_file(complex_t* data, const int count, char* filepathRE,char* filepathIM) {
+	std::ofstream outFileRE(filepathRE);
+	std::ofstream outFileIM(filepathIM);
+	for (int i = 0; i < count; i++) {
+		outFileRE << RE(data[i]) << '\n';
+		outFileIM << IM(data[i]) << '\n';
+	}
+	outFileRE.close();
+	outFileIM.close();
+}
+void upload_to_file(double* data, const int count, char* filepathRE) {
+	std::ofstream outFileRE(filepathRE);
+	for (int i = 0; i < count; i++) {
+		outFileRE << data[i] << '\n';
+	}
+	outFileRE.close();
+}
+void shift_up(double* inputData, double* outputData,const int count,const int freqshift) {
+	// Смещение вверх
+	fft_t pfft = { 0 };       /* FFT object (fill zeros)  */
+	fft_create(&pfft, count);
+	/* Fill FFT structure                               */
+	fft(inputData, count, &pfft, complexSignal);
+	fft_free(&pfft);        /* Clear fft_t object       */
+	complex_t ShiftArr[N] = { 0 };
+	double freq_otch = (double)fd / N;
+	int shift = ceil(freqshift / freq_otch);
+	int last_otch = ceil(4000 / freq_otch);
+	for (int i = 0; i < last_otch; i++) {
+		RE(ShiftArr[i + shift]) = RE(complexSignal[i]);
+		IM(ShiftArr[i + shift]) = IM(complexSignal[i]);
+		RE(ShiftArr[N - i - shift]) = RE(complexSignal[i]);
+		IM(ShiftArr[N - i - shift]) = IM(complexSignal[i]);
+	}
+	ifft_cmplx(ShiftArr, N, &pfft, complexSignal);
+	for (int i = 0; i < N; i++) {
+		outputData[i] = RE(complexSignal[i]);
+	}
+	//upload_to_file(complexSignal, N, (char*)".\\math_model\\RE.txt", (char*)".\\math_model\\Im.txt"); // вывод спектра
+	//upload_to_file(ShiftArr, N, (char*)".\\math_model\\Shift_upRe.txt", (char*)".\\math_model\\Shift_UpIM.txt"); // Вывод спекта смещенного сигнала
+	//upload_to_file(outputData, N, (char*)".\\math_model\\OutputData.txt"); // Вывод смещенного сигнала
+}
+void shift_down(double* inputData, double* outputData, const int count, const int freqshift) {
+	// Смещение вверх
+	fft_t pfft = { 0 };       /* FFT object (fill zeros)  */
+	fft_create(&pfft, count);
+	/* Fill FFT structure                               */
+	fft(inputData, count, &pfft, complexSignal);
+	fft_free(&pfft);        /* Clear fft_t object       */
+	complex_t ShiftArr[N] = { 0 };
+	double freq_otch = (double)fd / N;
+	int shift = ceil(freqshift / (double)freq_otch);
+	int last_otch = ceil((double)4000 / (double)freq_otch);
+	for (int i = abs((1-last_otch)); i > abs(shift); i--) {
+		RE(ShiftArr[i + shift]) = RE(complexSignal[i]);
+		IM(ShiftArr[i + shift]) = IM(complexSignal[i]);
+		RE(ShiftArr[N - i - shift]) = RE(complexSignal[i]);
+		IM(ShiftArr[N - i - shift]) = IM(complexSignal[i]);
+	}
+	ifft_cmplx(ShiftArr, N, &pfft, complexSignal);
+	for (int i = 0; i < N; i++) {
+		outputData[i] = RE(complexSignal[i]);
+	}
+	upload_to_file(complexSignal, N, (char*)".\\math_model\\RE.txt", (char*)".\\math_model\\Im.txt"); // вывод спектра
+	upload_to_file(ShiftArr, N, (char*)".\\math_model\\Shift_DownRe.txt", (char*)".\\math_model\\Shift_DownIM.txt"); // Вывод спекта смещенного сигнала
+	upload_to_file(outputData, N, (char*)".\\math_model\\OutputDataDown.txt"); // Вывод смещенного сигнала
+}
+//int secondmain()
+//{
+//	void* handle;       /* DSPL handle              */
+//	handle = dspl_load();   /* Load libdspl             */
+//	int freq1 = 500;
+//	int freq2 = 5500;
+//	int freq3 = 3400;
+//	int freq4 = 1000;
+//	int freq5 = 4000;
+//	double outUp[N];
+//	double outDown[N];
+//	double sin_r[N];
+//	for (int i=0; i<N; i++){
+//		sin_r[i] = sin(M_2PI * i*1./fd * freq1) + sin(M_2PI * i * 1. / fd * freq2) + sin(M_2PI * i * 1. / fd * freq3) 
+//			+ sin(M_2PI * i * 1. / fd * freq4) + sin(M_2PI * i * 1. / fd * freq5);
+//		cout << sin_r[i] << endl;
+//	}
+//	shift_up(sin_r, outUp,N,500);
+//	shift_down(sin_r, outDown, N, -400);
+//	dspl_free(handle);/* Clear DSPL handle        */
+//}
+int loadsignalbuffer(FILE * file, double* buffer,const int count) {
+	for (int i = 0; i < count; i++)
+	{
+		short shortbuff;
+		size_t countelement = fread(&shortbuff, 2, 1, file);
+		if (countelement == 0)
+		{
+			return 0; // файл кончился
+			break;
+		}
+		buffer[i] = shortbuff;
+	}
+	return 1; // Все гуд, пиздуем в баню
+}
+void writesignal(const int count, double* signal, FILE* file) {
+	for (int i = 0; i < N; i++)
+	{
+		short shortbuff = signal[i];
+		size_t countelemnt = fwrite(&shortbuff, 2, 1, file);
+		if (countelemnt == 0)
+		{
+			break;
+		}
+	}
+}
+int main() {
+	void* handle;       /* DSPL handle              */
+	handle = dspl_load();   /* Load libdspl             */
+	double signal[N];
+	double output[N];
+	FILE* fileInput = fopen(".\\math_model\\output.s16le", "rb");
+	FILE* FileOut = fopen(".\\math_model\\end.s16le", "wb");
+	if ((fileInput == NULL) && (FileOut == NULL))
+	{
+		fputs("Ошибка файла", stderr);
+		exit(1);
+	}
+
+	while (1) {
+		int temp = loadsignalbuffer(fileInput, signal, N);
+		shift_up(signal,output,N,200);
+		//shift_down(signal,output,N,200);
+		writesignal(N, output, FileOut);
+		if (temp == 0)
+		{
+			exit(0);
+		}
+	}
+	
+	fclose(FileOut);
+	dspl_free(handle);/* Clear DSPL handle        */
+	return 0;
+}
